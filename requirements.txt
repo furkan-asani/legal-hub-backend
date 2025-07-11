@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+llama-index
+qdrant-client
+llama-index-vector-stores-qdrant
+python-multipart
+requests
+python-dotenv
+# Optional for auth:
+# python-jose[cryptography]
+# fastapi-users 
