@@ -26,4 +26,7 @@ app.include_router(persons_router)
 from api.documents import router as documents_router
 app.include_router(documents_router)
 
+from api.notes import router as notes_router
+app.include_router(notes_router)
+
 # You can include other routers here as needed 
