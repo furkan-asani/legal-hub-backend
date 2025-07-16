@@ -29,6 +29,7 @@ class CaseResponse(BaseModel):
     defendant_id: int
     plaintiff_id: int
     tags: List[str]
+    state: str
 
 @router.post("/cases", response_model=CaseResponse)
 def create_case(case: CaseCreateRequest, user=Depends(get_current_user)):
@@ -80,7 +81,7 @@ def list_cases(user=Depends(get_current_user)):
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
                 cur.execute('SET SEARCH_PATH TO "schneider-poc";')
-                cur.execute('SELECT id, name, description, defendant_id, plaintiff_id FROM "case";')
+                cur.execute('SELECT id, name, description, defendant_id, plaintiff_id, state FROM "case";')
                 cases = cur.fetchall()
                 result = []
                 for row in cases:
@@ -92,7 +93,8 @@ def list_cases(user=Depends(get_current_user)):
                         description=row[2],
                         defendant_id=row[3],
                         plaintiff_id=row[4],
-                        tags=tags
+                        tags=tags,
+                        state=row[5]
                     ))
                 return result
     except Exception as e:

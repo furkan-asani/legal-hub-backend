@@ -77,6 +77,12 @@ table_statements = [
     '''
 ]
 
+# Add/alter table statement for state column
+alter_case_state = '''
+ALTER TABLE "schneider-poc"."case"
+ADD COLUMN IF NOT EXISTS state VARCHAR(20) NOT NULL DEFAULT 'active';
+'''
+
 # Sample data
 def sample_data(cur):
     cur.execute('SET SEARCH_PATH TO "schneider-poc";')
@@ -112,8 +118,8 @@ def sample_data(cur):
 
     # Insert case
     cur.execute("""
-        INSERT INTO "case" (name, description, defendant_id, plaintiff_id) VALUES
-        ('Case A', 'A sample legal case.', %s, %s)
+        INSERT INTO "case" (name, description, defendant_id, plaintiff_id, state) VALUES
+        ('Case A', 'A sample legal case.', %s, %s, 'active')
         RETURNING id;
     """, (person_ids[0], person_ids[1]))
     case_id = cur.fetchone()[0]
@@ -148,6 +154,8 @@ def main():
                 # Create tables
                 for stmt in table_statements:
                     cur.execute(stmt)
+                # Add state column if not exists
+                cur.execute(alter_case_state)
                 conn.commit()
                 print("Tables created or verified.")
 
