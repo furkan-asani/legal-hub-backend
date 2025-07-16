@@ -1,7 +1,20 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from rag_engine import RAGEngine
+import os
 
 app = FastAPI()
+
+# CORS setup
+allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 # Import and include routers
 from api.cases import router as cases_router
