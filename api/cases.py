@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Body
 from pydantic import BaseModel
 from typing import List, Optional
 import psycopg2
@@ -97,6 +97,78 @@ def list_cases(user=Depends(get_current_user)):
                         state=row[5]
                     ))
                 return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CaseUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    state: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+"""
+Sample curl to update a case:
+curl -X PATCH http://localhost:8000/cases/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Case Name",
+    "description": "Updated description.",
+    "state": "archived",
+    "tags": ["important", "archived"]
+  }'
+"""
+
+@router.patch("/cases/{case_id}", response_model=CaseResponse)
+def update_case(
+    case_id: int,
+    update: CaseUpdateRequest = Body(...),
+    user=Depends(get_current_user)
+):
+    try:
+        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SET SEARCH_PATH TO "schneider-poc";')
+                # Build dynamic update query
+                fields = []
+                values = []
+                if update.name is not None:
+                    fields.append('name = %s')
+                    values.append(update.name)
+                if update.description is not None:
+                    fields.append('description = %s')
+                    values.append(update.description)
+                if update.state is not None:
+                    fields.append('state = %s')
+                    values.append(update.state)
+                if fields:
+                    query = f'UPDATE "case" SET {", ".join(fields)} WHERE id = %s'
+                    values.append(case_id)
+                    cur.execute(query, tuple(values))
+                # Update tags if provided
+                if update.tags is not None:
+                    # Remove existing tags for this case
+                    cur.execute('DELETE FROM case_tag WHERE case_id = %s;', (case_id,))
+                    for tag in update.tags:
+                        cur.execute('INSERT INTO tag (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id;', (tag,))
+                        tag_id = cur.fetchone()[0]
+                        cur.execute('INSERT INTO case_tag (case_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING;', (case_id, tag_id))
+                conn.commit()
+                # Fetch updated case
+                cur.execute('SELECT id, name, description, defendant_id, plaintiff_id, state FROM "case" WHERE id = %s;', (case_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Case not found")
+                cur.execute('SELECT name FROM tag JOIN case_tag ON tag.id = case_tag.tag_id WHERE case_tag.case_id = %s;', (case_id,))
+                tags = [tag_row[0] for tag_row in cur.fetchall()]
+                return CaseResponse(
+                    id=row[0],
+                    name=row[1],
+                    description=row[2],
+                    defendant_id=row[3],
+                    plaintiff_id=row[4],
+                    tags=tags,
+                    state=row[5]
+                )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
