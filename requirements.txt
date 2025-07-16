@@ -6,6 +6,7 @@ llama-index-vector-stores-qdrant
 python-multipart
 requests
 python-dotenv
+psycopg2-binary
 # Optional for auth:
 # python-jose[cryptography]
 # fastapi-users 
