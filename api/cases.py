@@ -67,6 +67,37 @@ def create_case(case: CaseCreateRequest, user=Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+"""
+Sample curl to list all cases:
+curl -X GET http://localhost:8000/cases
+"""
+
+from typing import List
+
+@router.get("/cases", response_model=List[CaseResponse])
+def list_cases(user=Depends(get_current_user)):
+    try:
+        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SET SEARCH_PATH TO "schneider-poc";')
+                cur.execute('SELECT id, name, description, defendant_id, plaintiff_id FROM "case";')
+                cases = cur.fetchall()
+                result = []
+                for row in cases:
+                    cur.execute('SELECT name FROM tag JOIN case_tag ON tag.id = case_tag.tag_id WHERE case_tag.case_id = %s;', (row[0],))
+                    tags = [tag_row[0] for tag_row in cur.fetchall()]
+                    result.append(CaseResponse(
+                        id=row[0],
+                        name=row[1],
+                        description=row[2],
+                        defendant_id=row[3],
+                        plaintiff_id=row[4],
+                        tags=tags
+                    ))
+                return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 class PersonCreateRequest(BaseModel):
     name: str
     lastname: str
