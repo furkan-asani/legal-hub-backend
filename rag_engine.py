@@ -18,7 +18,7 @@ class RAGEngine:
         self.vector_store = QdrantVectorStore(client=self.client, collection_name=self.collection_name)
         self.storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         self.index = VectorStoreIndex.from_vector_store(self.vector_store)
-        self.service_context = ServiceContext.from_defaults(embed_model=OpenAIEmbedding())
+        self.service_context = ServiceContext.from_defaults(embed_model=OpenAIEmbedding(model="text-embedding-3-large", dimensions=3072))
 
     def index_file(self, file_path: str):
         reader = SimpleDirectoryReader(input_files=[file_path])

@@ -1,14 +1,14 @@
-from doc_loader import load_docx_as_documents
-from semantic_chunker import semantic_chunk_documents
-from qdrant_uploader import upload_nodes_to_qdrant
-from embedder import embed_nodes
+from rag.doc_loader import load_docx_as_documents
+from rag.semantic_chunker import semantic_chunk_documents
+from rag.qdrant_uploader import upload_nodes_to_qdrant
+from rag.embedder import embed_nodes
 import os
 import pickle
 
 # Set your .docx file path here
 DOCX_FILE_PATH = "./Abmahnung an Angeklagte.docx"  # <-- Change this to your test file
 CACHE_FILE = "cached_nodes.pkl"
-COLLECTION_NAME = "law-test"
+COLLECTION_NAME = "rag_collection"
 EMBEDDINGS_FILE = "embeddings.pkl"
 
 if __name__ == "__main__":
