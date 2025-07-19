@@ -3,9 +3,9 @@ Sample curl to list all documents for a case:
 curl -X GET http://localhost:8000/cases/1/documents
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Body, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Path, Body, UploadFile, File, Query
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import psycopg2
 import os
 from dotenv import load_dotenv
@@ -35,6 +35,33 @@ class DocumentResponse(BaseModel):
 
 class DocumentTagsUpdateRequest(BaseModel):
     tags: list[str]
+
+class QueryRequest(BaseModel):
+    query: str
+    case_id: Optional[int] = None
+
+class CitationResponse(BaseModel):
+    source: str
+    text: str
+    case_id: Optional[int] = None
+    score: Optional[float] = None
+
+class QueryResponse(BaseModel):
+    answer: str
+    citations: List[CitationResponse]
+    retrieved_chunks: int
+    case_id_filter: Optional[int] = None
+    error: Optional[str] = None
+
+"""
+Sample curl to query documents with AI assistance:
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What are the main legal arguments in this case?",
+    "case_id": 1
+  }'
+"""
 
 """
 Sample curl to update tags of a document:
@@ -120,11 +147,17 @@ def upload_document(
         documents = load_docx_as_documents(file_obj=file.file)
         # 2. Chunk the document
         nodes = semantic_chunk_documents(documents)
-        # 3. Embed the chunks
+        # 3. Add filename metadata to all nodes
+        for node in nodes:
+            if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
+                node.metadata["file_name"] = file.filename
+            else:
+                node.metadata = {"file_name": file.filename}
+        # 4. Embed the chunks
         embed_nodes(nodes)
-        # 4. Upload to Qdrant with case_id metadata
+        # 5. Upload to Qdrant with case_id metadata
         upload_nodes_to_qdrant(nodes, collection_name="law-test", case_id=case_id)
-        # 5. Insert into DB (file_path can be original filename or blank)
+        # 6. Insert into DB (file_path can be original filename or blank)
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
                 cur.execute('SET SEARCH_PATH TO "schneider-poc";')
@@ -141,5 +174,46 @@ def upload_document(
             upload_timestamp=str(upload_timestamp),
             tags=[]
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/query", response_model=QueryResponse)
+def query_documents(
+    request: QueryRequest = Body(...),
+    user=Depends(get_current_user)
+):
+    """
+    Query documents using AI-powered retrieval and generation.
+    Searches through uploaded documents and provides AI-generated responses with citations.
+    """
+    try:
+        # Initialize RAG engine
+        rag_engine = RAGEngine(collection_name="law-test")
+
+        # Perform AI-powered query with citations
+        result = rag_engine.query_with_gpt(
+            query=request.query,
+            case_id=request.case_id
+        )
+
+        # Convert citations to response format
+        citations = [
+            CitationResponse(
+                source=citation["source"],
+                text=citation["text"],
+                case_id=citation.get("case_id"),
+                score=citation.get("score")
+            )
+            for citation in result.get("citations", [])
+        ]
+
+        return QueryResponse(
+            answer=result.get("answer", ""),
+            citations=citations,
+            retrieved_chunks=result.get("retrieved_chunks", 0),
+            case_id_filter=result.get("case_id_filter"),
+            error=result.get("error")
+        )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) 

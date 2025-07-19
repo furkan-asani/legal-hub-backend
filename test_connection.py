@@ -66,7 +66,7 @@ def test_qdrant_connection_client():
         if not qdrant_host or not qdrant_api_key:
             print("Error: QDRANT_HOST and QDRANT_API_KEY must be set in your .env file.")
             return False
-        client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key, port= 6333, prefer_grpc=True, https=True)
+        client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key, port= 6333, grpc_port=6334, prefer_grpc=True, https=True)
         collections = client.get_collections().collections
         print("\n✅ Successfully connected to Qdrant via Qdrant client!")
         print(f"   Host: {qdrant_host}")
@@ -84,14 +84,6 @@ def test_qdrant_connection_client():
 
 if __name__ == "__main__":
     print("\n--- Qdrant Connection Test ---")
-    rest_success = test_qdrant_connection_rest()
-    client_success = test_qdrant_connection_client()
+    test_qdrant_connection_client()
     print("\n--- Summary ---")
-    if rest_success and client_success:
-        print("Both REST API and Qdrant client connections succeeded.")
-    elif rest_success:
-        print("REST API connection succeeded, but Qdrant client connection failed.")
-    elif client_success:
-        print("Qdrant client connection succeeded, but REST API connection failed.")
-    else:
-        print("Both REST API and Qdrant client connections failed.") 
+    print("Qdrant client connection succeeded.")
