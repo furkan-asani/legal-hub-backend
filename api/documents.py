@@ -3,12 +3,15 @@ Sample curl to list all documents for a case:
 curl -X GET http://localhost:8000/cases/1/documents
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Body
+from fastapi import APIRouter, Depends, HTTPException, Path, Body, UploadFile, File
 from pydantic import BaseModel
 from typing import List
 import psycopg2
 import os
 from dotenv import load_dotenv
+import shutil
+from rag.rag_engine import RAGEngine
+import datetime
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -36,6 +39,13 @@ curl -X PATCH http://localhost:8000/documents/1/tags \
   -d '{
     "tags": ["confidential", "scanned"]
   }'
+"""
+
+"""
+Sample curl to upload a document:
+curl -X POST http://localhost:8000/documents/upload \
+  -F "file=@/path/to/your/document.pdf" \
+  -F "case_id=1"
 """
 
 @router.get("/cases/{case_id}/documents", response_model=List[DocumentResponse])
@@ -88,5 +98,46 @@ def update_document_tags(document_id: int, update: DocumentTagsUpdateRequest = B
                     upload_timestamp=str(row[3]),
                     tags=tags
                 )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+UPLOAD_DIR = "uploaded_docs"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+@router.post("/documents/upload", response_model=DocumentResponse)
+def upload_document(
+    file: UploadFile = File(...),
+    case_id: int = File(...),
+    user=Depends(get_current_user)
+):
+    try:
+        # Save uploaded file
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        file_ext = os.path.splitext(file.filename)[1]
+        saved_filename = f"{os.path.splitext(file.filename)[0]}_{timestamp}{file_ext}"
+        file_path = os.path.join(UPLOAD_DIR, saved_filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        # Insert into DB
+        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SET SEARCH_PATH TO "schneider-poc";')
+                cur.execute(
+                    'INSERT INTO document (case_id, file_path, upload_timestamp) VALUES (%s, %s, %s) RETURNING id, upload_timestamp;',
+                    (case_id, file_path, datetime.datetime.now())
+                )
+                doc_id, upload_timestamp = cur.fetchone()
+                conn.commit()
+        # Process with RAGEngine
+        rag = RAGEngine()
+        rag.index_file(file_path, case_id=case_id)
+        return DocumentResponse(
+            id=doc_id,
+            case_id=case_id,
+            file_path=file_path,
+            upload_timestamp=str(upload_timestamp),
+            tags=[]
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) 

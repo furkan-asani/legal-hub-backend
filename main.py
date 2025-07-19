@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from rag_engine import RAGEngine
+from rag.rag_engine import RAGEngine
 import os
 
 app = FastAPI()

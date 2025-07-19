@@ -2,13 +2,14 @@ from rag.doc_loader import load_docx_as_documents
 from rag.semantic_chunker import semantic_chunk_documents
 from rag.qdrant_uploader import upload_nodes_to_qdrant
 from rag.embedder import embed_nodes
+from rag.rag_engine import RAGEngine
 import os
 import pickle
 
 # Set your .docx file path here
 DOCX_FILE_PATH = "./Abmahnung an Angeklagte.docx"  # <-- Change this to your test file
 CACHE_FILE = "cached_nodes.pkl"
-COLLECTION_NAME = "rag_collection"
+COLLECTION_NAME = "law-test"
 EMBEDDINGS_FILE = "embeddings.pkl"
 
 if __name__ == "__main__":
@@ -50,5 +51,13 @@ if __name__ == "__main__":
     for i, node in enumerate(nodes):
         print(f"\n--- Chunk {i+1} ---\n{node.get_content()[:500]}\n...")
 
-    # Step 4: Upload to Qdrant
-    upload_nodes_to_qdrant(nodes, collection_name=COLLECTION_NAME) 
+    # Step 4: Upload to Qdrant with case_id metadata
+    test_case_id = 12345  # Example test case_id
+    upload_nodes_to_qdrant(nodes, collection_name=COLLECTION_NAME, case_id=test_case_id)
+
+    # Print out the metadata of the inserted points from Qdrant
+    rag = RAGEngine(collection_name=COLLECTION_NAME)
+    print("\nFetching points from Qdrant to verify metadata...")
+    points = rag.client.scroll(collection_name=COLLECTION_NAME, limit=10)[0]
+    for i, point in enumerate(points):
+        print(f"Point {i+1} metadata: {point.payload}") 

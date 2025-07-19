@@ -20,9 +20,15 @@ class RAGEngine:
         self.index = VectorStoreIndex.from_vector_store(self.vector_store)
         self.service_context = ServiceContext.from_defaults(embed_model=OpenAIEmbedding(model="text-embedding-3-large", dimensions=3072))
 
-    def index_file(self, file_path: str):
+    def index_file(self, file_path: str, case_id: int = None):
         reader = SimpleDirectoryReader(input_files=[file_path])
         docs = reader.load_data()
+        if case_id is not None:
+            for doc in docs:
+                if hasattr(doc, 'metadata') and isinstance(doc.metadata, dict):
+                    doc.metadata["case_id"] = case_id
+                else:
+                    doc.metadata = {"case_id": case_id}
         self.index.insert_documents(docs, service_context=self.service_context)
 
     def query(self, query: str) -> dict:
