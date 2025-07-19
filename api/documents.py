@@ -12,6 +12,10 @@ from dotenv import load_dotenv
 import shutil
 from rag.rag_engine import RAGEngine
 import datetime
+from rag.doc_loader import load_docx_as_documents
+from rag.semantic_chunker import semantic_chunk_documents
+from rag.qdrant_uploader import upload_nodes_to_qdrant
+from rag.embedder import embed_nodes
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -112,30 +116,28 @@ def upload_document(
     user=Depends(get_current_user)
 ):
     try:
-        # Save uploaded file
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        file_ext = os.path.splitext(file.filename)[1]
-        saved_filename = f"{os.path.splitext(file.filename)[0]}_{timestamp}{file_ext}"
-        file_path = os.path.join(UPLOAD_DIR, saved_filename)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        # Insert into DB
+        # 1. Read the uploaded file in-memory and load document
+        documents = load_docx_as_documents(file_obj=file.file)
+        # 2. Chunk the document
+        nodes = semantic_chunk_documents(documents)
+        # 3. Embed the chunks
+        embed_nodes(nodes)
+        # 4. Upload to Qdrant with case_id metadata
+        upload_nodes_to_qdrant(nodes, collection_name="law-test", case_id=case_id)
+        # 5. Insert into DB (file_path can be original filename or blank)
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
                 cur.execute('SET SEARCH_PATH TO "schneider-poc";')
                 cur.execute(
                     'INSERT INTO document (case_id, file_path, upload_timestamp) VALUES (%s, %s, %s) RETURNING id, upload_timestamp;',
-                    (case_id, file_path, datetime.datetime.now())
+                    (case_id, file.filename, datetime.datetime.now())
                 )
                 doc_id, upload_timestamp = cur.fetchone()
                 conn.commit()
-        # Process with RAGEngine
-        rag = RAGEngine()
-        rag.index_file(file_path, case_id=case_id)
         return DocumentResponse(
             id=doc_id,
             case_id=case_id,
-            file_path=file_path,
+            file_path=file.filename,
             upload_timestamp=str(upload_timestamp),
             tags=[]
         )
