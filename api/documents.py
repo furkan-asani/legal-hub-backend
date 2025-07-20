@@ -74,9 +74,10 @@ curl -X PATCH http://localhost:8000/documents/1/tags \
 """
 
 """
-Sample curl to upload a document:
+Sample curl to upload multiple documents:
 curl -X POST http://localhost:8000/documents/upload \
-  -F "file=@/path/to/your/document.pdf" \
+  -F "file=@/path/to/your/document1.pdf" \
+  -F "file=@/path/to/your/document2.pdf" \
   -F "case_id=1"
 """
 
@@ -139,46 +140,49 @@ UPLOAD_DIR = "uploaded_docs"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-@router.post("/documents/upload", response_model=DocumentResponse)
+@router.post("/documents/upload", response_model=List[DocumentResponse])
 @global_limit
 def upload_document(
     request: Request,
-    file: UploadFile = File(...),
+    file: List[UploadFile] = File(...),
     case_id: int = File(...),
     user=Depends(get_current_user)
 ):
+    responses = []
     try:
-        # 1. Read the uploaded file in-memory and load document
-        documents = load_docx_as_documents(file_obj=file.file)
-        # 2. Chunk the document
-        nodes = semantic_chunk_documents(documents)
-        # 3. Add filename metadata to all nodes
-        for node in nodes:
-            if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
-                node.metadata["file_name"] = file.filename
-            else:
-                node.metadata = {"file_name": file.filename}
-        # 4. Embed the chunks
-        embed_nodes(nodes)
-        # 5. Upload to Qdrant with case_id metadata
-        upload_nodes_to_qdrant(nodes, collection_name="law-test", case_id=case_id)
-        # 6. Insert into DB (file_path can be original filename or blank)
-        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
-            with conn.cursor() as cur:
-                cur.execute('SET SEARCH_PATH TO "schneider-poc";')
-                cur.execute(
-                    'INSERT INTO document (case_id, file_path, upload_timestamp) VALUES (%s, %s, %s) RETURNING id, upload_timestamp;',
-                    (case_id, file.filename, datetime.datetime.now())
-                )
-                doc_id, upload_timestamp = cur.fetchone()
-                conn.commit()
-        return DocumentResponse(
-            id=doc_id,
-            case_id=case_id,
-            file_path=file.filename,
-            upload_timestamp=str(upload_timestamp),
-            tags=[]
-        )
+        for upload in file:
+            # 1. Read the uploaded file in-memory and load document
+            documents = load_docx_as_documents(file_obj=upload.file)
+            # 2. Chunk the document
+            nodes = semantic_chunk_documents(documents)
+            # 3. Add filename metadata to all nodes
+            for node in nodes:
+                if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
+                    node.metadata["file_name"] = upload.filename
+                else:
+                    node.metadata = {"file_name": upload.filename}
+            # 4. Embed the chunks
+            embed_nodes(nodes)
+            # 5. Upload to Qdrant with case_id metadata
+            upload_nodes_to_qdrant(nodes, collection_name="law-test", case_id=case_id)
+            # 6. Insert into DB (file_path can be original filename or blank)
+            with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('SET SEARCH_PATH TO "schneider-poc";')
+                    cur.execute(
+                        'INSERT INTO document (case_id, file_path, upload_timestamp) VALUES (%s, %s, %s) RETURNING id, upload_timestamp;',
+                        (case_id, upload.filename, datetime.datetime.now())
+                    )
+                    doc_id, upload_timestamp = cur.fetchone()
+                    conn.commit()
+            responses.append(DocumentResponse(
+                id=doc_id,
+                case_id=case_id,
+                file_path=upload.filename,
+                upload_timestamp=str(upload_timestamp),
+                tags=[]
+            ))
+        return responses
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
