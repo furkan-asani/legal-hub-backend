@@ -428,6 +428,117 @@ class QdrantQuerySystemTester:
             self.print_status(f"Citation accuracy test failed: {e}", "ERROR")
             return False
 
+    def test_reranker_functionality(self) -> bool:
+        """Test reranker functionality and compare with/without reranking"""
+        self.print_status("Testing reranker functionality...", "INFO")
+        
+        try:
+            # Check if reranker is available
+            from rag.reranker import is_reranker_available, get_reranker_config
+            
+            config = get_reranker_config()
+            self.print_status(f"Reranker config: {config}", "INFO")
+            
+            if not config["enabled"]:
+                self.print_status("Reranker is disabled in configuration", "WARNING")
+                return True
+            
+            # Test reranker availability
+            if not is_reranker_available(config["provider"]):
+                self.print_status(f"Reranker '{config['provider']}' not available (missing API key or package)", "WARNING")
+                self.print_status("To enable Cohere reranking:", "INFO")
+                self.print_status("1. Set COHERE_API_KEY in your .env file", "INFO")
+                self.print_status("2. Install: pip install llama-index-postprocessor-cohere-rerank", "INFO")
+                return True
+            
+            # Test query with reranker
+            test_query = "What are the payment terms and liability limits in the contract?"
+            
+            self.print_status(f"Testing query: '{test_query}'", "INFO")
+            
+            # Get reranker info from RAG engine
+            if hasattr(self.rag_engine, 'reranker') and self.rag_engine.reranker:
+                self.print_status(f"✓ RAG engine has reranker: {self.rag_engine.reranker_config['provider']}", "SUCCESS")
+            else:
+                self.print_status("RAG engine does not have reranker configured", "WARNING")
+                return True
+            
+            # Test standard query (with reranker)
+            result_with_reranker = self.rag_engine.query(test_query)
+            
+            # Check if reranker info is in response
+            if "reranker_used" in result_with_reranker:
+                self.print_status(f"✓ Reranker used: {result_with_reranker['reranker_used']}", "SUCCESS")
+            
+            # Test comparison if available
+            if hasattr(self.rag_engine, 'compare_with_and_without_reranker'):
+                self.print_status("Running comparison test...", "INFO")
+                
+                comparison = self.rag_engine.compare_with_and_without_reranker(test_query)
+                
+                if "error" in comparison:
+                    self.print_status(f"Comparison failed: {comparison['error']}", "WARNING")
+                    return True
+                
+                # Analyze results
+                with_reranker = comparison["with_reranker"]
+                without_reranker = comparison["without_reranker"]
+                
+                self.print_status("=== Reranker Comparison Results ===", "INFO")
+                
+                # Compare citation counts
+                with_count = len(with_reranker.get("citations", []))
+                without_count = len(without_reranker.get("citations", []))
+                
+                print(f"{TestColors.CYAN}With Reranker:{TestColors.END}")
+                print(f"  Citations: {with_count}")
+                print(f"  Reranker: {with_reranker.get('reranker_used', 'unknown')}")
+                
+                print(f"{TestColors.CYAN}Without Reranker:{TestColors.END}")
+                print(f"  Citations: {without_count}")
+                print(f"  Reranker: {without_reranker.get('reranker_used', 'unknown')}")
+                
+                # Show citation differences
+                if with_reranker.get("citations") and without_reranker.get("citations"):
+                    print(f"\n{TestColors.YELLOW}--- Citation Quality Comparison ---{TestColors.END}")
+                    
+                    for i, (with_cite, without_cite) in enumerate(zip(
+                        with_reranker["citations"][:3], 
+                        without_reranker["citations"][:3]
+                    )):
+                        print(f"\n{TestColors.MAGENTA}Citation {i+1}:{TestColors.END}")
+                        
+                        print(f"With Reranker:")
+                        print(f"  Source: {with_cite['source']}")
+                        if 'score' in with_cite:
+                            print(f"  Score: {with_cite['score']:.4f}")
+                        print(f"  Text: {with_cite['text'][:100]}...")
+                        
+                        print(f"Without Reranker:")
+                        print(f"  Source: {without_cite['source']}")
+                        if 'score' in without_cite:
+                            print(f"  Score: {without_cite['score']:.4f}")
+                        print(f"  Text: {without_cite['text'][:100]}...")
+                
+                self.print_status("✓ Reranker comparison completed", "SUCCESS")
+            
+            # Test specific reranker features
+            citations = result_with_reranker.get("citations", [])
+            if citations:
+                reranked_citations = [c for c in citations if c.get("reranked", False)]
+                if reranked_citations:
+                    self.print_status(f"✓ Found {len(reranked_citations)} reranked citations", "SUCCESS")
+                else:
+                    self.print_status("No citations marked as reranked", "WARNING")
+            
+            return True
+            
+        except Exception as e:
+            self.print_status(f"Reranker test failed: {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def test_qdrant_direct_search(self) -> bool:
         """Test direct Qdrant search if available"""
         self.print_status("Testing direct Qdrant search...", "INFO")
@@ -473,6 +584,7 @@ class QdrantQuerySystemTester:
             ("Basic Query", self.test_basic_query),
             ("LLM Query with GPT", self.test_llm_query_with_gpt),
             ("Citation Accuracy", self.test_citation_accuracy),
+            ("Reranker Functionality", self.test_reranker_functionality),
             ("Direct Qdrant Search", self.test_qdrant_direct_search),
         ]
         
@@ -502,6 +614,14 @@ class QdrantQuerySystemTester:
         print(f"LLM Provider: {os.getenv('LLM_PROVIDER', 'openai')}")
         print(f"Collection: {self.collection_name}")
         print(f"Qdrant Host: {os.getenv('QDRANT_HOST', 'Not set')}")
+        
+        # Show reranker config
+        try:
+            from rag.reranker import get_reranker_config
+            reranker_config = get_reranker_config()
+            print(f"Reranker: {reranker_config['provider']} (enabled: {reranker_config['enabled']})")
+        except:
+            print("Reranker: Configuration unavailable")
         
         # Cleanup
         self.cleanup()

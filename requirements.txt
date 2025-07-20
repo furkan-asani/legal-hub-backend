@@ -7,6 +7,10 @@ python-multipart
 requests
 python-dotenv
 psycopg2-binary
+
+# Reranking capabilities
+llama-index-postprocessor-cohere-rerank
+
 # Optional for auth:
 # python-jose[cryptography]
 # fastapi-users 
