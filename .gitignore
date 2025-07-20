@@ -126,4 +126,5 @@ chroma_db/
 .DS_Store
 Abmahnung an Angeklagte.docx
 cached_nodes.pkl
+embeddings.pkl
 .vscode/launch.json
