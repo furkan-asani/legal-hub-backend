@@ -2,6 +2,7 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageCon
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.core.query_engine import CitationQueryEngine
+from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
 from dotenv import load_dotenv
 from .qdrant_client_factory import get_qdrant_client, create_collection_if_not_exists
 from .reranker import create_reranker_from_config, get_reranker_config
@@ -40,11 +41,18 @@ class RAGEngine:
         docs = SimpleDirectoryReader(input_files=[file_path]).load_data()
         self.index.insert_documents(docs)
 
-    def query(self, query: str) -> dict:
+    def query(self, query: str, case_id: int = None) -> dict:
         # Configure node postprocessors (including reranker if available)
         node_postprocessors = []
         if self.reranker:
             node_postprocessors.append(self.reranker)
+        
+        # Build metadata filter if case_id is provided
+        filters = None
+        if case_id is not None:
+            filters = MetadataFilters(
+                filters=[MetadataFilter(key="case_id", value=case_id, operator=FilterOperator.EQ)]
+            )
         
         # Use CitationQueryEngine for answers with citations
         citation_query_engine = CitationQueryEngine.from_args(
@@ -52,6 +60,7 @@ class RAGEngine:
             similarity_top_k=5,  # Get more results before reranking
             citation_chunk_size=512,
             node_postprocessors=node_postprocessors,
+            filters=filters
         )
         
         response = citation_query_engine.query(query)
@@ -62,17 +71,20 @@ class RAGEngine:
                 "source": meta.get("file_name", f"chunk_{i+1}"),
                 "text": node.node.get_text()[:200]
             }
-            
+            # Add case_id to citation if present
+            if "case_id" in meta:
+                citation["case_id"] = meta["case_id"]
             # Add reranking score if available
             if hasattr(node, 'score') and node.score is not None:
                 citation["score"] = node.score
                 citation["reranked"] = True
-            
             citations.append(citation)
         
         result = {
             "answer": str(response), 
-            "citations": citations
+            "citations": citations,
+            "retrieved_chunks": len(response.source_nodes),
+            "case_id_filter": case_id
         }
         
         # Add reranker info to result

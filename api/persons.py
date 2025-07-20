@@ -9,12 +9,13 @@ curl -X POST http://localhost:8000/persons \
   }'
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
 import psycopg2
 import os
 from dotenv import load_dotenv
+from ratelimit import global_limit
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -41,7 +42,8 @@ class PersonResponse(BaseModel):
     role: str
 
 @router.post("/persons", response_model=PersonResponse)
-def create_person(person: PersonCreateRequest, user=Depends(get_current_user)):
+@global_limit
+def create_person(request: Request, person: PersonCreateRequest, user=Depends(get_current_user)):
     if person.role not in ("plaintiff", "defendant"):
         raise HTTPException(status_code=400, detail="Role must be 'plaintiff' or 'defendant'.")
     try:
@@ -71,7 +73,8 @@ curl -X GET http://localhost:8000/persons
 """
 
 @router.get("/persons", response_model=List[PersonResponse])
-def list_persons(user=Depends(get_current_user)):
+@global_limit
+def list_persons(request: Request, user=Depends(get_current_user)):
     try:
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:

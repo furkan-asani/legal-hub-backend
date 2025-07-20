@@ -3,7 +3,7 @@ Sample curl to list all documents for a case:
 curl -X GET http://localhost:8000/cases/1/documents
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Body, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Body, UploadFile, File, Query, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import psycopg2
@@ -16,6 +16,7 @@ from rag.doc_loader import load_docx_as_documents
 from rag.semantic_chunker import semantic_chunk_documents
 from rag.qdrant_uploader import upload_nodes_to_qdrant
 from rag.embedder import embed_nodes
+from ratelimit import global_limit
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -80,7 +81,8 @@ curl -X POST http://localhost:8000/documents/upload \
 """
 
 @router.get("/cases/{case_id}/documents", response_model=List[DocumentResponse])
-def list_case_documents(case_id: int = Path(..., description="ID of the case"), user=Depends(get_current_user)):
+@global_limit
+def list_case_documents(request: Request, case_id: int = Path(..., description="ID of the case"), user=Depends(get_current_user)):
     try:
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
@@ -103,7 +105,8 @@ def list_case_documents(case_id: int = Path(..., description="ID of the case"), 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/documents/{document_id}/tags", response_model=DocumentResponse)
-def update_document_tags(document_id: int, update: DocumentTagsUpdateRequest = Body(...), user=Depends(get_current_user)):
+@global_limit
+def update_document_tags(request: Request, document_id: int, update: DocumentTagsUpdateRequest = Body(...), user=Depends(get_current_user)):
     try:
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
@@ -137,7 +140,9 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 @router.post("/documents/upload", response_model=DocumentResponse)
+@global_limit
 def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     case_id: int = File(...),
     user=Depends(get_current_user)
@@ -178,8 +183,10 @@ def upload_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/query", response_model=QueryResponse)
+@global_limit
 def query_documents(
-    request: QueryRequest = Body(...),
+    request: Request,
+    query_request: QueryRequest = Body(...),
     user=Depends(get_current_user)
 ):
     """
@@ -191,9 +198,9 @@ def query_documents(
         rag_engine = RAGEngine(collection_name="law-test")
 
         # Perform AI-powered query with citations
-        result = rag_engine.query_with_gpt(
-            query=request.query,
-            case_id=request.case_id
+        result = rag_engine.query(
+            query=query_request.query,
+            case_id=query_request.case_id
         )
 
         # Convert citations to response format

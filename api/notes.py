@@ -11,13 +11,14 @@ curl -X POST http://localhost:8000/cases/1/notes \
   }'
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import psycopg2
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+from ratelimit import global_limit
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -40,7 +41,8 @@ class NoteCreateRequest(BaseModel):
     note_content: str
 
 @router.get("/cases/{case_id}/notes", response_model=List[NoteResponse])
-def list_case_notes(case_id: int = Path(..., description="ID of the case"), user=Depends(get_current_user)):
+@global_limit
+def list_case_notes(request: Request, case_id: int = Path(..., description="ID of the case"), user=Depends(get_current_user)):
     try:
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
@@ -58,7 +60,8 @@ def list_case_notes(case_id: int = Path(..., description="ID of the case"), user
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/cases/{case_id}/notes", response_model=NoteResponse)
-def create_case_note(case_id: int, note: NoteCreateRequest, user=Depends(get_current_user)):
+@global_limit
+def create_case_note(request: Request, case_id: int, note: NoteCreateRequest, user=Depends(get_current_user)):
     try:
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:

@@ -7,6 +7,7 @@ python-multipart
 requests
 python-dotenv
 psycopg2-binary
+slowapi
 
 # Reranking capabilities
 llama-index-postprocessor-cohere-rerank
