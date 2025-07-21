@@ -18,6 +18,7 @@ from rag.qdrant_uploader import upload_nodes_to_qdrant
 from rag.embedder import embed_nodes
 from ratelimit import global_limit
 import re
+from rag.crewai_legal_agent import answer_legal_question
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -262,5 +263,42 @@ def query_documents(
             error=result.get("error")
         )
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/query/agent", response_model=QueryResponse)
+@global_limit
+def query_documents_agent(
+    request: Request,
+    query_request: QueryRequest = Body(...),
+    user=Depends(get_current_user)
+):
+    """
+    Query documents using the CrewAI agent (with RAG and context tools).
+    Compatible with the /query endpoint.
+    """
+    try:
+        # Use the CrewAI agent to answer the question
+        result = answer_legal_question(
+            question=query_request.query,
+            case_id=query_request.case_id
+        )
+        # Convert citations to response format (if present)
+        citations = [
+            CitationResponse(
+                source=citation.get("source", ""),
+                text=citation.get("text", ""),
+                case_id=citation.get("case_id"),
+                score=citation.get("score")
+            )
+            for citation in result.get("citations", [])
+        ]
+        return QueryResponse(
+            answer=result.get("answer", ""),
+            citations=citations,
+            retrieved_chunks=result.get("retrieved_chunks", 0),
+            case_id_filter=result.get("case_id_filter"),
+            error=result.get("error")
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) 
