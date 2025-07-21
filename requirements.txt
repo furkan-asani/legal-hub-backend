@@ -15,3 +15,5 @@ llama-index-postprocessor-cohere-rerank
 # Optional for auth:
 # python-jose[cryptography]
 # fastapi-users 
+
+crewai 

@@ -4,11 +4,11 @@ from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.core.query_engine import CitationQueryEngine
 from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
 from dotenv import load_dotenv
-from .qdrant_client_factory import get_qdrant_client, create_collection_if_not_exists
-from .reranker import create_reranker_from_config, get_reranker_config
+from rag.qdrant_client_factory import get_qdrant_client, create_collection_if_not_exists
+from rag.reranker import create_reranker_from_config, get_reranker_config
 
 class RAGEngine:
-    def __init__(self, collection_name="rag_collection"):
+    def __init__(self, collection_name="law-test"):
         load_dotenv()
         
         # Configure global settings instead of ServiceContext
@@ -142,3 +142,38 @@ class RAGEngine:
             "without_reranker": without_reranker,
             "reranker_config": self.reranker_config
         } 
+
+    def get_chunks_by_case_id(self, case_id: int, limit: int = 1000):
+        """
+        Retrieve all chunks (points) for a given case_id from Qdrant.
+        Returns a list of dicts with 'text' and 'metadata'.
+        """
+        from qdrant_client import models
+        scroll_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="case_id",
+                    match=models.MatchValue(value=case_id)
+                )
+            ]
+        )
+        all_points = []
+        next_page = None
+        while True:
+            points, next_page = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=scroll_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+                offset=next_page
+            )
+            for point in points:
+                payload = point.payload or {}
+                all_points.append({
+                    "text": payload.get("text", ""),
+                    "metadata": payload
+                })
+            if not next_page:
+                break
+        return all_points 
