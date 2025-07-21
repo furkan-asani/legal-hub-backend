@@ -1,7 +1,7 @@
 from rag.crewai_legal_agent import answer_legal_question
 
 def test_answer_legal_question():
-    question = "Kannst du diesen Fall für mich zusammenfassen?"
+    question = "Was war die erste Antwort des Angeklagten?"
     case_id = 9
     answer = answer_legal_question(question, case_id)
     print(f"Answer: {answer}")

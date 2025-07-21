@@ -17,7 +17,7 @@ class RagTool(BaseTool):
     def _run(self, query: str, case_id: Optional[int] = None):
         rag_engine = get_rag_engine()
         result = rag_engine.query(query=query, case_id=case_id)
-        return result.get("answer", "")
+        return result  # Return the full dict, not just the answer string
 
 class CaseContextTool(BaseTool):
     name: str = "Case Context Retrieval Tool"
@@ -36,15 +36,15 @@ class CaseContextTool(BaseTool):
 legal_agent = Agent(
     role="Legal Question Answering Agent",
     goal="Answer legal questions accurately using all available legal documents and tools.",
-    backstory="You are an expert legal assistant with access to a powerful retrieval system for legal documents. You have to judge how much information is needed to answer the question. You can use the RAG tool to retrieve information from the legal documents. If you want to summarize something then you would need to query all the chunks by caseId.",
+    backstory="You are an expert legal assistant with access to a powerful retrieval system for legal documents. You also have access to the case context tool to retrieve all information about a case. Only use that if you need all of the information about a case. The rag engine in general will be a better fit for specialized questions",
     tools=[RagTool(), CaseContextTool()],
     verbose=True
 )
 
-def answer_legal_question(question: str, case_id: Optional[int] = None) -> str:
+def answer_legal_question(question: str, case_id: Optional[int] = None):
     """
     Use the CrewAI legal agent to answer a legal question, leveraging the RAG tool for retrieval.
     """
     query = question if case_id is None else f"[CASE {case_id}] {question}"
     result = legal_agent.kickoff(query)
-    return result.raw 
+    return result.raw  # Return the full dict, including answer and citations 

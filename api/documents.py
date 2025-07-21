@@ -17,6 +17,7 @@ from rag.semantic_chunker import semantic_chunk_documents
 from rag.qdrant_uploader import upload_nodes_to_qdrant
 from rag.embedder import embed_nodes
 from ratelimit import global_limit
+import re
 
 load_dotenv()
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
@@ -80,6 +81,23 @@ curl -X POST http://localhost:8000/documents/upload \
   -F "file=@/path/to/your/document2.pdf" \
   -F "case_id=1"
 """
+
+def insert_document_fulltext(document_id: int, fulltext: str):
+    """
+    Insert the fulltext for a document into the document_fulltext table in 'poc-schneider' schema.
+    """
+    try:
+        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SET SEARCH_PATH TO "poc-schneider";')
+                cur.execute(
+                    'INSERT INTO document_fulltext (document_id, fulltext) VALUES (%s, %s);',
+                    (document_id, fulltext)
+                )
+                conn.commit()
+    except Exception as e:
+        print(f"Error inserting document fulltext: {e}")
+        raise
 
 @router.get("/cases/{case_id}/documents", response_model=List[DocumentResponse])
 @global_limit
@@ -155,12 +173,27 @@ def upload_document(
             documents = load_docx_as_documents(file_obj=upload.file)
             # 2. Chunk the document
             nodes = semantic_chunk_documents(documents)
-            # 3. Add filename metadata to all nodes
+            # 2.5. Try to extract a date from the document text
+            doc_text = documents[0].text if documents else ""
+            # Regex for YYYY-MM-DD, DD.MM.YYYY, MM/DD/YYYY
+            date_patterns = [
+                r"(\d{4}-\d{2}-\d{2})",         # 2023-12-31
+                r"(\d{2}\.\d{2}\.\d{4})",     # 31.12.2023
+                r"(\d{2}/\d{2}/\d{4})"         # 12/31/2023
+            ]
+            found_date = None
+            for pattern in date_patterns:
+                match = re.search(pattern, doc_text)
+                if match:
+                    found_date = match.group(1)
+                    break
+            # 3. Add filename and date metadata to all nodes
             for node in nodes:
-                if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
-                    node.metadata["file_name"] = upload.filename
-                else:
-                    node.metadata = {"file_name": upload.filename}
+                if not hasattr(node, 'metadata') or not isinstance(node.metadata, dict):
+                    node.metadata = {}
+                node.metadata["file_name"] = upload.filename
+                if found_date:
+                    node.metadata["document_date"] = found_date
             # 4. Embed the chunks
             embed_nodes(nodes)
             # 5. Upload to Qdrant with case_id metadata
@@ -175,6 +208,9 @@ def upload_document(
                     )
                     doc_id, upload_timestamp = cur.fetchone()
                     conn.commit()
+            # 7. Store fulltext in document_fulltext (poc-schneider schema)
+            fulltext = documents[0].text if documents else ""
+            insert_document_fulltext(doc_id, fulltext)
             responses.append(DocumentResponse(
                 id=doc_id,
                 case_id=case_id,

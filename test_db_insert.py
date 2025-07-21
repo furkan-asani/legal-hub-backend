@@ -147,6 +147,28 @@ def sample_data(cur):
         'document_id': document_id
     }
 
+def test_create_document_fulltext_table():
+    """
+    Test that creates the document_fulltext table in the 'poc-schneider' schema if it does not exist.
+    """
+    try:
+        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SET SEARCH_PATH TO "poc-schneider";')
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS document_fulltext (
+                        id SERIAL PRIMARY KEY,
+                        document_id INT REFERENCES document(id) ON DELETE CASCADE,
+                        fulltext TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+                ''')
+                conn.commit()
+        print("document_fulltext table created or already exists.")
+    except Exception as e:
+        print(f"Error creating document_fulltext table: {e}")
+        assert False, f"Failed to create table: {e}"
+
 def main():
     try:
         with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
@@ -179,4 +201,5 @@ def main():
         print(f"Error: {e}")
 
 if __name__ == "__main__":
+    test_create_document_fulltext_table()
     main() 
