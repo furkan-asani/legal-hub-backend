@@ -16,4 +16,7 @@ llama-index-postprocessor-cohere-rerank
 # python-jose[cryptography]
 # fastapi-users 
 
-crewai 
+crewai
+
+# WebSocket testing
+websockets 

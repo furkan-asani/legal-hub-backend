@@ -1,8 +1,9 @@
-from typing import Optional
+from typing import Optional, List
 from crewai import Agent, Task, Crew
 from crewai.tools import BaseTool
 
 from rag.rag_engine import RAGEngine
+from rag.streaming_callback import StreamingCallback
 
 # Centralized singleton RAGEngine instance
 def get_rag_engine():
@@ -38,11 +39,17 @@ class CaseContextTool(BaseTool):
             for chunk in chunks
         ]
 
-# Define the legal question answering agent
-legal_agent = Agent(
-    role="Legal Question Answering Agent",
-    goal="Answer legal questions accurately using all available legal documents and tools.",
-    backstory="""
+def create_legal_agent(callbacks: List[StreamingCallback] = None) -> Agent:
+    """
+    Create a legal question answering agent with optional streaming callbacks.
+    
+    Args:
+        callbacks: List of streaming callbacks for real-time event streaming
+        
+    Returns:
+        Configured CrewAI Agent
+    """
+    agent_backstory = """
 Role: You are a meticulous and highly strategic Senior Legal Analyst. Your primary mission is to answer user questions with unparalleled precision and efficiency by intelligently querying a complex legal database. Your reputation is built on finding the exact piece of information needed without wading through irrelevant material.
 
 Core Directives:
@@ -111,12 +118,19 @@ State Plan & Tool Choice: My strategy is to use the rag_tool to search for the j
 Action Formulation: I will now call the rag_tool with the query "justification for counterclaim" and set the documentId filter to 'doc_002'.
 
 (End of Thought process, agent proceeds to Action)
+    """
+    
+    return Agent(
+        role="Legal Question Answering Agent",
+        goal="Answer legal questions accurately using all available legal documents and tools.",
+        backstory=agent_backstory,
+        tools=[RagTool(), CaseContextTool()],
+        verbose=True,
+        callbacks=callbacks or []
+    )
 
-
-    """,
-    tools=[RagTool(), CaseContextTool()],
-    verbose=True
-)
+# Create default agent for backward compatibility
+legal_agent = create_legal_agent()
 
 def answer_legal_question(question: str, case_id: Optional[int] = None):
     """
@@ -136,4 +150,44 @@ def answer_legal_question(question: str, case_id: Optional[int] = None):
         "citations": rag_result.get("citations", []),
         "retrieved_chunks": rag_result.get("retrieved_chunks", 0),
         "case_id_filter": rag_result.get("case_id_filter")
-    } 
+    }
+
+def answer_legal_question_streaming(
+    question: str, 
+    case_id: Optional[int] = None, 
+    callback: StreamingCallback = None
+):
+    """
+    Use the CrewAI legal agent with streaming capabilities to answer a legal question.
+    
+    Args:
+        question: The legal question to answer
+        case_id: Optional case ID to filter documents
+        callback: Streaming callback for real-time events
+        
+    Returns:
+        Dictionary with answer and metadata
+    """
+    # Create agent with streaming callback
+    agent = create_legal_agent(callbacks=[callback] if callback else [])
+    
+    # Prepare query
+    query = question if case_id is None else f"[CASE {case_id}] {question}"
+    
+    # Run agent
+    result = agent.kickoff(query)
+    
+    # Get RAG citations
+    rag_engine = get_rag_engine()
+    rag_result = rag_engine.query(query=question, case_id=case_id)
+    
+    # Return the full result with the agent's answer and RAG citations
+    return {
+        "answer": result.raw,
+        "citations": rag_result.get("citations", []),
+        "retrieved_chunks": rag_result.get("retrieved_chunks", 0),
+        "case_id_filter": rag_result.get("case_id_filter")
+    }
+
+# Alias for backward compatibility
+create_streaming_agent = create_legal_agent 

@@ -34,4 +34,7 @@ app.include_router(documents_router)
 from api.notes import router as notes_router
 app.include_router(notes_router)
 
+from api.websocket import router as websocket_router
+app.include_router(websocket_router)
+
 # You can include other routers here as needed 
