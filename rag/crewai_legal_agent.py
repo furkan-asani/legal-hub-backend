@@ -1,5 +1,5 @@
 from typing import Optional, List
-from crewai import Agent, Task, Crew
+from crewai import LLM, Agent, Task, Crew
 from crewai.tools import BaseTool
 
 from rag.rag_engine import RAGEngine
@@ -126,6 +126,11 @@ Action Formulation: I will now call the rag_tool with the query "justification f
         backstory=agent_backstory,
         tools=[RagTool(), CaseContextTool()],
         verbose=True,
+        llm=LLM(
+            model="o4-mini-2025-04-16",
+            drop_params=True,
+            additional_drop_params=["stop"]
+        ),
         callbacks=callbacks or []
     )
 
@@ -173,9 +178,23 @@ def answer_legal_question_streaming(
     
     # Prepare query
     query = question if case_id is None else f"[CASE {case_id}] {question}"
+
+    # Emit thinking_start event if callback is provided
+    if callback:
+        callback.on_thinking_start(
+            agent_name="Legal Question Answering Agent",
+            thought=f"Planning answer for query: {query}"
+        )
     
     # Run agent
     result = agent.kickoff(query)
+
+    # Emit thinking_end event if callback is provided
+    if callback:
+        callback.on_thinking_end(
+            agent_name="Legal Question Answering Agent",
+            conclusion="Completed reasoning and generated answer."
+        )
     
     # Get RAG citations
     rag_engine = get_rag_engine()

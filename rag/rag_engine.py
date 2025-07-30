@@ -57,7 +57,7 @@ class RAGEngine:
         # Use CitationQueryEngine for answers with citations
         citation_query_engine = CitationQueryEngine.from_args(
             self.index,
-            similarity_top_k=5,  # Get more results before reranking
+            similarity_top_k=7,  # Get more results before reranking
             citation_chunk_size=512,
             node_postprocessors=node_postprocessors,
             filters=filters
@@ -65,11 +65,11 @@ class RAGEngine:
         
         response = citation_query_engine.query(query)
         citations = []
-        for i, node in enumerate(response.source_nodes):
+        for i, node in enumerate(response.source_nodes[:self.reranker_config["top_n"]]):
             meta = node.node.metadata
             citation = {
                 "source": meta.get("file_name", f"chunk_{i+1}"),
-                "text": node.node.get_text()[:200]
+                "text": node.node.get_text()
             }
             # Add case_id to citation if present
             if "case_id" in meta:
