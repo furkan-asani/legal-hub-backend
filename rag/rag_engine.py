@@ -96,15 +96,22 @@ class RAGEngine:
         
         return result
 
-    def query_without_reranker(self, query: str) -> dict:
+    def query_without_reranker(self, query: str, case_id: int = None) -> dict:
         """
         Query method that bypasses reranking for comparison purposes.
         """
+        filters = None
+        if case_id is not None:
+            filters = MetadataFilters(
+                filters=[MetadataFilter(key="case_id", value=case_id, operator=FilterOperator.EQ)]
+            )
+        
         # Use CitationQueryEngine without any postprocessors
         citation_query_engine = CitationQueryEngine.from_args(
             self.index,
             similarity_top_k=3,
             citation_chunk_size=512,
+            filters=filters
         )
         
         response = citation_query_engine.query(query)

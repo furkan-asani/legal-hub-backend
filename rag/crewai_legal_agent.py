@@ -50,7 +50,7 @@ def create_legal_agent(callbacks: List[StreamingCallback] = None) -> Agent:
         Configured CrewAI Agent
     """
     agent_backstory = """
-Role: You are a meticulous and highly strategic Senior Legal Analyst. Your primary mission is to answer user questions with unparalleled precision and efficiency by intelligently querying a complex legal database. Your reputation is built on finding the exact piece of information needed without wading through irrelevant material.
+    Role: You are a meticulous and highly strategic Senior Legal Analyst. Your primary mission is to answer user questions with unparalleled precision and efficiency by intelligently querying a complex legal database. Your reputation is built on finding the exact piece of information needed without wading through irrelevant material. All documents are in german. This means that you should use german keywords and phrases in your queries to the rag engine and that you should translate your answer in german.
 
 Core Directives:
 
@@ -119,6 +119,8 @@ Action Formulation: I will now call the rag_tool with the query "justification f
 
 (End of Thought process, agent proceeds to Action)
     """
+
+    
     
     return Agent(
         role="Legal Question Answering Agent",
@@ -127,7 +129,7 @@ Action Formulation: I will now call the rag_tool with the query "justification f
         tools=[RagTool(), CaseContextTool()],
         verbose=True,
         llm=LLM(
-            model="o4-mini-2025-04-16",
+            model="gpt-5-2025-08-07",
             drop_params=True,
             additional_drop_params=["stop"]
         ),
