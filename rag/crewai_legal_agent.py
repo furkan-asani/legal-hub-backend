@@ -1,15 +1,46 @@
 from typing import Optional, List
 from crewai import LLM, Agent, Task, Crew
 from crewai.tools import BaseTool
+import psycopg2
+import os
+import logging
+from dotenv import load_dotenv
 
 from rag.rag_engine import RAGEngine
 from rag.streaming_callback import StreamingCallback
+
+load_dotenv()
+DATABASE_CONNECTION_STRING = os.getenv("DATABASE_CONNECTION_STRING")
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Centralized singleton RAGEngine instance
 def get_rag_engine():
     if not hasattr(get_rag_engine, "_instance"):
         get_rag_engine._instance = RAGEngine(collection_name="law-test")
     return get_rag_engine._instance
+
+def get_document_names_by_case_id(case_id: int) -> List[dict]:
+    """
+    Get document names and IDs for a given case_id from the database.
+    
+    Args:
+        case_id: The case ID to get documents for
+        
+    Returns:
+        List of dictionaries with document_id and file_path
+    """
+    try:
+        with psycopg2.connect(DATABASE_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SET SEARCH_PATH TO "schneider-poc";')
+                cur.execute('SELECT id, file_path FROM document WHERE case_id = %s;', (case_id,))
+                docs = cur.fetchall()
+                return [{"document_id": row[0], "file_path": row[1]} for row in docs]
+    except Exception as e:
+        print(f"Error getting document names: {e}")
+        return []
 
 class RagTool(BaseTool):
     name: str = "RAG Legal Retrieval Tool"
@@ -56,7 +87,7 @@ Core Directives:
 
 STRATEGIZE FIRST, ACT SECOND: Before you use any tool, you must pause and formulate a clear plan. Your thought process must explicitly outline this plan.
 
-LEVERAGE THE DOCUMENT MANIFEST: For every query, you will receive a list of documents with their titles and documentIds. This list is your primary guide. Your first step is to analyze the user's question and cross-reference it with the document titles to form a hypothesis about which document(s) contain the answer.
+LEVERAGE THE DOCUMENT MANIFEST: For every case-specific query, you will automatically receive a Document Manifest containing a list of documents with their documentIds and file_path titles. This manifest is your primary guide. Your first step is to analyze the user's question and cross-reference it with the document titles to form a hypothesis about which document(s) contain the answer.
 
 PRECISION IS PARAMOUNT: Your default tool is the specialized RAG (Retrieval-Augmented Generation) Tool. It is your surgical scalpel. Only use the broad case_context_tool when absolutely necessary.
 
@@ -76,7 +107,7 @@ Step 2: Execute with the RAG Tool (Your Scalpel)
 
 Action: Use the rag_tool.
 
-Filtering: You MUST apply a documentId filter corresponding to the document you identified in Step 1. This is non-negotiable for targeted questions.
+Filtering: You MUST apply a documentId filter corresponding to the document you identified in Step 1. Use the exact documentId from the provided Document Manifest. This is non-negotiable for targeted questions.
 
 Iterate if Necessary: If your first query doesn't yield the answer, analyze the results and consider if another document from the list might be a better target. Reformulate your query or choose a different documentId.
 
@@ -95,11 +126,11 @@ User Question: "What was the defendant's justification for their first countercl
 
 Provided Document Manifest:
 
-documentId: 'doc_001', title: 'Plaintiff's Initial Complaint'
+documentId: '1', title: 'Plaintiff's Initial Complaint'
 
-documentId: 'doc_002', title: 'Defendant's Initial Answer and Counterclaims'
+documentId: '2', title: 'Defendant's Initial Answer and Counterclaims'
 
-documentId: 'doc_003', title: 'Motion to Dismiss by Plaintiff'
+documentId: '3', title: 'Motion to Dismiss by Plaintiff'
 
 Agent's Internal Monologue (Thought):
 
@@ -113,9 +144,9 @@ Hypothesize using Manifest: I have three documents.
 
 'Defendant's Initial Answer and Counterclaims' is the perfect candidate. The title explicitly mentions both "Answer" and "Counterclaims."
 
-State Plan & Tool Choice: My strategy is to use the rag_tool to search for the justification. I will apply a filter to search only within the document 'Defendant's Initial Answer and Counterclaims' (doc_002) to ensure precision and avoid contamination from other documents. The case_context_tool is completely inappropriate here.
+State Plan & Tool Choice: My strategy is to use the rag_tool to search for the justification. I will apply a filter to search only within the document 'Defendant's Initial Answer and Counterclaims' (documentId: '2') to ensure precision and avoid contamination from other documents. The case_context_tool is completely inappropriate here.
 
-Action Formulation: I will now call the rag_tool with the query "justification for counterclaim" and set the documentId filter to 'doc_002'.
+Action Formulation: I will now call the rag_tool with the query "justification for counterclaim" and set the documentId filter to '2'.
 
 (End of Thought process, agent proceeds to Action)
     """
@@ -143,7 +174,20 @@ def answer_legal_question(question: str, case_id: Optional[int] = None):
     """
     Use the CrewAI legal agent to answer a legal question, leveraging the RAG tool for retrieval.
     """
-    query = question if case_id is None else f"[CASE {case_id}] {question}"
+    # Build query with document manifest if case_id is provided
+    query = question
+    if case_id is not None:
+        documents = get_document_names_by_case_id(case_id)
+        if documents:
+            doc_manifest = "\n".join([f"documentId: '{doc['document_id']}', title: '{doc['file_path']}'" for doc in documents])
+            query = f"[CASE {case_id}] Document Manifest:\n{doc_manifest}\n\nQuestion: {question}"
+        else:
+            query = f"[CASE {case_id}] {question}"
+    
+    # Log the query being sent to the agent
+    logger.info(f"Sending query to legal agent: {query}")
+    print(f"[AGENT QUERY] {query}")
+    
     result = legal_agent.kickoff(query)
     
     # The agent's raw output is just the answer string, but we need to get the citations
@@ -178,8 +222,19 @@ def answer_legal_question_streaming(
     # Create agent with streaming callback
     agent = create_legal_agent(callbacks=[callback] if callback else [])
     
-    # Prepare query
-    query = question if case_id is None else f"[CASE {case_id}] {question}"
+    # Build query with document manifest if case_id is provided
+    query = question
+    if case_id is not None:
+        documents = get_document_names_by_case_id(case_id)
+        if documents:
+            doc_manifest = "\n".join([f"documentId: '{doc['document_id']}', title: '{doc['file_path']}'" for doc in documents])
+            query = f"[CASE {case_id}] Document Manifest:\n{doc_manifest}\n\nQuestion: {question}"
+        else:
+            query = f"[CASE {case_id}] {question}"
+
+    # Log the query being sent to the agent
+    logger.info(f"Sending query to legal agent (streaming): {query}")
+    print(f"[AGENT QUERY STREAMING] {query}")
 
     # Emit thinking_start event if callback is provided
     if callback:
